@@ -283,8 +283,22 @@ function runCommand(t){
   if(/\bfirst slide\b|\bbeginning\b|^start$|\bgo home\b/.test(t)){ goto(0); return; }
   if(/\blast slide\b|\bthe end\b|\bfinal slide\b/.test(t)){ goto(pageCount-1); return; }
 
-  if(/\b(next|forward|advance|go on|continue|move on|forth)\b/.test(t)){ next(); return; }
-  if(/\b(previous|prev|back|go back|backward|last one)\b/.test(t)){ prev(); return; }
+  const NEXT=/\b(next|forward|advance|go on|continue|move on|forth)\b/g;
+  const PREV=/\b(previous|prev|back|go back|backward|last one)\b/g;
+
+  // count how many times a "next"/"prev" word appears in the phrase
+  const nextCount=(t.match(NEXT)||[]).length;
+  const prevCount=(t.match(PREV)||[]).length;
+
+  if(nextCount||prevCount){
+    let steps = nextCount||prevCount;
+    const num = parseNumber(t);
+    // "next three" / "back two" -> jump that many
+    if(num && steps===1){ steps = num; }
+    steps = Math.min(steps, 50);
+    for(let i=0;i<steps;i++){ nextCount?next():prev(); }
+    return;
+  }
 
   if(/^first$/.test(t)){ goto(0); return; }
   if(/^last$/.test(t)){ goto(pageCount-1); return; }

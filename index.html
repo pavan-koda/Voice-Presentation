@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VOX — Voice Presenter</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600;9..144,900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c0a14; --panel:#15121f; --ink:#f4f0ff; --muted:#8a82a6;
+    --accent:#c6ff4a; --accent2:#7b5cff; --line:rgba(255,255,255,.08); --live:#ff4a6e;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(123,92,255,.18), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(198,255,74,.10), transparent 55%),
+      var(--bg);
+    color:var(--ink); font-family:"DM Mono",monospace; min-height:100vh; overflow-x:hidden;
+  }
+  header{display:flex;align-items:center;justify-content:space-between;padding:22px 34px;border-bottom:1px solid var(--line);}
+  .logo{font-family:"Fraunces",serif;font-weight:900;font-size:30px;letter-spacing:-1px;}
+  .logo span{color:var(--accent);}
+  .sub{color:var(--muted);font-size:12px;letter-spacing:2px;text-transform:uppercase;}
+  main{max-width:1100px;margin:0 auto;padding:40px 34px 80px;}
+
+  .drop{border:1.5px dashed var(--line);border-radius:18px;padding:60px 30px;text-align:center;transition:.25s;cursor:pointer;background:var(--panel);}
+  .drop:hover,.drop.over{border-color:var(--accent);background:#191525;}
+  .drop h2{font-family:"Fraunces",serif;font-weight:600;font-size:26px;margin-bottom:10px;}
+  .drop p{color:var(--muted);font-size:13px;line-height:1.7;}
+  .drop .big{font-size:46px;margin-bottom:18px;}
+
+  .stage{display:none;margin-top:10px;}
+  .stage.on{display:block;}
+  .slidebox{position:relative;background:#000;border-radius:16px;overflow:hidden;border:1px solid var(--line);aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;}
+  .slidebox canvas{max-width:100%;max-height:100%;display:block;}
+  .counter{position:absolute;bottom:14px;right:16px;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);padding:6px 12px;border-radius:30px;font-size:12px;border:1px solid var(--line);}
+  .slidebox:fullscreen{background:#000;border-radius:0;}
+  .slidebox:fullscreen canvas{width:auto;height:100vh;}
+
+  .controls{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px;align-items:center;}
+  button{font-family:"DM Mono",monospace;background:var(--panel);color:var(--ink);border:1px solid var(--line);padding:12px 18px;border-radius:12px;cursor:pointer;font-size:13px;transition:.2s;}
+  button:hover{border-color:var(--accent);transform:translateY(-1px);}
+  button.primary{background:var(--accent);color:#0c0a14;border-color:var(--accent);font-weight:500;}
+  button.mic.live{background:var(--live);color:#fff;border-color:var(--live);animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,74,110,.5)}50%{box-shadow:0 0 0 12px rgba(255,74,110,0)}}
+
+  .voicebar{margin-top:18px;display:flex;gap:16px;align-items:center;padding:16px 18px;background:var(--panel);border:1px solid var(--line);border-radius:14px;}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none;}
+  .dot.live{background:var(--live);box-shadow:0 0 12px var(--live);}
+  .heard{color:var(--muted);font-size:13px;}
+  .heard b{color:var(--accent);}
+
+  .cmds{margin-top:26px;display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}
+  .cmd{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;}
+  .cmd .k{color:var(--accent);font-size:13px;}
+  .cmd .d{color:var(--muted);font-size:11px;margin-top:4px;}
+  .note{margin-top:22px;color:var(--muted);font-size:12px;line-height:1.7;}
+  .err{color:var(--live);margin-top:14px;font-size:13px;}
+  .loading{color:var(--muted);margin-top:20px;font-size:13px;}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">V<span>O</span>X</div>
+  <div class="sub">Voice-Driven Presenter</div>
+</header>
+
+<main>
+  <div class="drop" id="drop">
+    <div class="big">◳</div>
+    <h2>Drop your slides (.pdf) here</h2>
+    <p>or click to browse · renders exactly as your deck · then just talk<br>
+    Tip: in PowerPoint use <b>File → Save As → PDF</b> to export your .pptx</p>
+    <input type="file" id="file" accept="application/pdf,.pdf" hidden>
+  </div>
+  <div class="loading" id="loading"></div>
+  <div class="err" id="err"></div>
+
+  <div class="stage" id="stage">
+    <div class="slidebox" id="slidebox">
+      <canvas id="canvas"></canvas>
+      <div class="counter" id="counter">1 / 1</div>
+    </div>
+
+    <div class="controls">
+      <button id="prev">◀ Prev</button>
+      <button id="next">Next ▶</button>
+      <button id="full">⛶ Fullscreen</button>
+      <button class="mic primary" id="mic">🎙 Start Listening</button>
+    </div>
+
+    <div class="voicebar">
+      <div class="dot" id="dot"></div>
+      <div class="heard" id="heard">Mic off. Click “Start Listening”, then say a command.</div>
+    </div>
+
+    <div class="cmds">
+      <div class="cmd"><div class="k">"next" / "next slide"</div><div class="d">advance one slide</div></div>
+      <div class="cmd"><div class="k">"previous" / "back"</div><div class="d">go back one slide</div></div>
+      <div class="cmd"><div class="k">"first" / "last"</div><div class="d">jump to start / end</div></div>
+      <div class="cmd"><div class="k">"go to slide five"</div><div class="d">jump to a number</div></div>
+      <div class="cmd"><div class="k">"fullscreen"</div><div class="d">enter fullscreen</div></div>
+      <div class="cmd"><div class="k">"exit" / "escape"</div><div class="d">leave fullscreen</div></div>
+    </div>
+
+    <p class="note">⚠ Voice uses the browser Web Speech API — works best in <b>Chrome / Edge</b> on desktop. Allow microphone access when prompted. Arrow keys, Space, and <b>F</b> also work.</p>
+  </div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const $ = id => document.getElementById(id);
+
+let pdfDoc=null, pageCount=0, idx=0, rendering=false, pending=null;
+
+/* ---------- File handling ---------- */
+const drop=$('drop'), fileInput=$('file');
+drop.onclick=()=>fileInput.click();
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('over');};
+drop.ondragleave=()=>drop.classList.remove('over');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);};
+fileInput.onchange=e=>{if(e.target.files[0])handleFile(e.target.files[0]);};
+
+async function handleFile(file){
+  $('err').textContent='';
+  if(!file.name.toLowerCase().endsWith('.pdf')){ $('err').textContent='Please upload a .pdf (export your .pptx to PDF first).'; return; }
+  $('loading').textContent='Loading slides…';
+  try{
+    const buf=await file.arrayBuffer();
+    pdfDoc=await pdfjsLib.getDocument({data:buf}).promise;
+    pageCount=pdfDoc.numPages; idx=0;
+    $('stage').classList.add('on'); drop.style.display='none'; $('loading').textContent='';
+    render();
+  }catch(err){
+    console.error(err);
+    $('err').textContent='Could not read this PDF: '+err.message;
+    $('loading').textContent='';
+  }
+}
+
+/* ---------- Rendering ---------- */
+async function render(){
+  if(rendering){ pending=idx; return; }
+  rendering=true;
+  const page=await pdfDoc.getPage(idx+1);
+  const fs=document.fullscreenElement;
+  const baseW=fs?window.screen.width:1280;
+  const vp0=page.getViewport({scale:1});
+  const scale=(baseW/vp0.width)*(window.devicePixelRatio||1);
+  const vp=page.getViewport({scale});
+  const canvas=$('canvas'), ctx=canvas.getContext('2d');
+  canvas.width=vp.width; canvas.height=vp.height;
+  await page.render({canvasContext:ctx,viewport:vp}).promise;
+  $('counter').textContent=`${idx+1} / ${pageCount}`;
+  rendering=false;
+  if(pending!=null){ pending=null; render(); }
+}
+
+/* ---------- Navigation ---------- */
+function next(){ if(idx<pageCount-1){idx++;render();} }
+function prev(){ if(idx>0){idx--;render();} }
+function goto(n){ idx=Math.max(0,Math.min(pageCount-1,n)); render(); }
+
+$('next').onclick=next; $('prev').onclick=prev;
+$('full').onclick=()=>$('slidebox').requestFullscreen?.();
+document.addEventListener('fullscreenchange',()=>render());
+document.onkeydown=e=>{
+  if(!pdfDoc)return;
+  if(e.key==='ArrowRight'||e.key===' '){e.preventDefault();next();}
+  if(e.key==='ArrowLeft')prev();
+  if(e.key==='f'||e.key==='F')$('slidebox').requestFullscreen?.();
+};
+
+/* ---------- Voice ---------- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recog=null, listening=false;
+const numWords={one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20};
+
+$('mic').onclick=()=>{
+  if(!SR){ $('heard').innerHTML='⚠ This browser has no Speech Recognition. Use Chrome or Edge.'; return; }
+  listening?stopListen():startListen();
+};
+function startListen(){
+  recog=new SR(); recog.continuous=true; recog.interimResults=false; recog.lang='en-US';
+  recog.onresult=e=>{ const t=e.results[e.results.length-1][0].transcript.trim().toLowerCase(); $('heard').innerHTML=`Heard: <b>${t}</b>`; runCommand(t); };
+  recog.onerror=e=>{
+    if(e.error==='network'){
+      listening=false;
+      $('heard').innerHTML='⚠ <b>Network error</b> — speech needs an internet connection and the page must be served over http(s), not opened from a file. See note below.';
+      $('mic').classList.remove('live'); $('mic').textContent='🎙 Start Listening'; $('dot').classList.remove('live');
+    } else if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+      listening=false;
+      $('heard').innerHTML='⚠ <b>Microphone blocked</b> — allow mic access for this site in the address-bar icon, then click Start again.';
+      $('mic').classList.remove('live'); $('mic').textContent='🎙 Start Listening'; $('dot').classList.remove('live');
+    } else if(e.error==='no-speech'){
+      $('heard').innerHTML='…didn\'t catch that, still listening.';
+    } else {
+      $('heard').innerHTML=`Mic error: <b>${e.error}</b>`;
+    }
+  };
+  recog.onend=()=>{ if(listening){ try{recog.start();}catch(_){} } };
+  recog.start(); listening=true;
+  $('mic').classList.add('live'); $('mic').textContent='■ Stop Listening';
+  $('dot').classList.add('live'); $('heard').textContent='Listening… try "next slide".';
+}
+function stopListen(){
+  listening=false; recog&&recog.stop();
+  $('mic').classList.remove('live'); $('mic').textContent='🎙 Start Listening';
+  $('dot').classList.remove('live'); $('heard').textContent='Mic off.';
+}
+function runCommand(t){
+  if(/full ?screen|present|full screen/.test(t)) return $('slidebox').requestFullscreen?.();
+  if(/\b(exit|escape|close|minimi[sz]e|stop full)\b/.test(t)) return document.exitFullscreen?.();
+  const m=t.match(/(?:slide|number|go to|page)\s+(\d+|[a-z]+)/);
+  if(m){ const v=parseInt(m[1]); const n=isNaN(v)?numWords[m[1]]:v; if(n){ goto(n-1); return; } }
+  if(/\b(next|forward|advance|go on|continue|move on)\b/.test(t)) return next();
+  if(/\b(previous|prev|back|go back)\b/.test(t)) return prev();
+  if(/\bfirst\b|\bbeginning\b|\bstart\b/.test(t)) return goto(0);
+  if(/\blast\b|\bend\b|\bfinal\b/.test(t)) return goto(pageCount-1);
+  const lone=t.match(/\b(\d+)\b/); if(lone) return goto(parseInt(lone[1])-1);
+}
+</script>
+</body>
+</html>
